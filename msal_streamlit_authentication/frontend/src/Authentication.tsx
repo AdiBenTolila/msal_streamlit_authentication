@@ -16,52 +16,82 @@ const Authentication = ({ args }: ComponentProps) => {
     const buttonId = args["html_id"] ?? ""
 
     const [loginToken, setLoginToken] = useState(null)
-    const isAuthenticated = useCallback(() => {
-        return msalInstance.getAllAccounts().length > 0
-    }, [])
+
+    // derive authentication state from the current msal instance (recomputed each render)
+    const isAuthenticated = msalInstance.getAllAccounts().length > 0
 
     useEffect(() => {
-        if (msalInstance.getAllAccounts().length > 0) {
+        // If there is an account available, try to acquire a token silently.
+        // If silent acquisition fails (interaction required), fall back to a popup acquire.
+        let mounted = true
+        const accounts = msalInstance.getAllAccounts()
+        if (accounts.length > 0) {
+            const account = accounts[0]
             msalInstance.acquireTokenSilent({
                 ...loginRequest,
-                account: msalInstance.getAllAccounts()[0]
+                account,
             }).then(function (response) {
+                if (!mounted) return
                 // @ts-ignore
                 setLoginToken(response)
+            }).catch(async function (error) {
+                // fallback to popup if silent token acquisition failed
+                console.warn("acquireTokenSilent failed, falling back to acquireTokenPopup:", error)
+                try {
+                    const resp = await msalInstance.acquireTokenPopup({
+                        ...loginRequest,
+                        account,
+                    })
+                    if (!mounted) return
+                    // @ts-ignore
+                    setLoginToken(resp)
+                } catch (err) {
+                    console.error("acquireTokenPopup also failed:", err)
+                    if (!mounted) return
+                    setLoginToken(null)
+                }
             })
         } else {
             setLoginToken(null)
         }
-    }, [])
 
+        return () => {
+            mounted = false
+        }
+    }, [msalInstance, loginRequest])
+
+    // Send token (or null) to Streamlit each time it changes and update the frame height.
     useEffect(() => {
         Streamlit.setComponentValue(loginToken)
         Streamlit.setFrameHeight()
-        Streamlit.setComponentReady()
     }, [loginToken])
+
+    // Signal component is ready once on mount so Streamlit doesn't wait forever.
+    useEffect(() => {
+        Streamlit.setComponentReady()
+    }, [])
 
     const loginPopup = useCallback(() => {
         msalInstance.loginPopup(loginRequest).then(function (response) {
             // @ts-ignore
             setLoginToken(response)
         }).catch(console.error)
-    }, [])
+    }, [msalInstance, loginRequest])
 
     const logoutPopup = useCallback(() => {
         // @ts-ignore
-        msalInstance.logoutPopup(logoutRequest).then(function (response) {
+        msalInstance.logoutPopup(logoutRequest).then(function () {
             setLoginToken(null)
         }).catch(console.error)
-    }, [])
+    }, [msalInstance, logoutRequest])
 
     return (
         <div className="card">
-            <button onClick={isAuthenticated() ? logoutPopup : loginPopup} className={buttonClass} id={buttonId}>
-                {isAuthenticated() ? logoutButtonText : loginButtonText}
+            <button onClick={isAuthenticated ? logoutPopup : loginPopup} className={buttonClass} id={buttonId}>
+                {isAuthenticated ? logoutButtonText : loginButtonText}
             </button>
         </div>
     )
-
 }
 
 export default withStreamlitConnection(Authentication)
