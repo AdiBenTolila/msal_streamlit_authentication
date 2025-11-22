@@ -1,6 +1,6 @@
 import {BrowserAuthOptions, CacheOptions, LogLevel, PublicClientApplication} from "@azure/msal-browser";
 
-export const useMsalInstance = function (auth_config: BrowserAuthOptions, cache_config: CacheOptions) {
+export const useMsalInstance = async function (auth_config: BrowserAuthOptions, cache_config: CacheOptions) {
     const instance = new PublicClientApplication({
         auth: auth_config,
         cache: cache_config,
@@ -29,6 +29,6 @@ export const useMsalInstance = function (auth_config: BrowserAuthOptions, cache_
             }
         }
     });
-    instance.initialize()
+    await instance.initialize()
     return instance;
 }
